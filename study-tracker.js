@@ -4,14 +4,37 @@ import chalk from "chalk";
 
 const dataFile = "./study-tracker.json";
 
-// Load KPIs from file
+class KPI {
+  constructor(title, weeklyGoal, weeks) {
+    this.title = title;
+    this.weeklyGoal = parseFloat(weeklyGoal);
+    this.weeks = parseInt(weeks, 10);
+    this.totalGoal = this.weeklyGoal * this.weeks;
+    this.progress = 0;
+    this.sessions = [];
+  }
+
+  addSession(hours) {
+    this.sessions.push(parseFloat(hours));
+    this.progress = this.sessions.reduce(
+      (total, session) => total + session,
+      0
+    );
+  }
+
+  getOverallProgress() {
+    return ((this.progress / this.totalGoal) * 100).toFixed(2);
+  }
+}
+
 function loadKPIs() {
   if (!fs.existsSync(dataFile)) {
     fs.writeFileSync(dataFile, JSON.stringify([]));
   }
-  const data = fs.readFileSync(dataFile);
-  return JSON.parse(data);
+  const data = JSON.parse(fs.readFileSync(dataFile));
+  return data.map((kpi) => Object.assign(new KPI(), kpi));
 }
+
 function saveKPIs(kpis) {
   fs.writeFileSync(dataFile, JSON.stringify(kpis, null, 2));
 }
@@ -28,7 +51,11 @@ async function addGoal() {
         if (!input) {
           return "Title cannot be empty.";
         }
-        if (existingKPIs.find((kpi) => kpi.title === input)) {
+        if (
+          existingKPIs.some(
+            (kpi) => kpi.title.toLowerCase() === input.toLowerCase()
+          )
+        ) {
           return "A goal with this title already exists.";
         }
         return true;
@@ -66,16 +93,8 @@ async function addGoal() {
     },
   ]);
 
-  const totalGoal = parseFloat(weeklyGoal) * parseFloat(weeks);
   const kpis = loadKPIs();
-  kpis.push({
-    title,
-    weeklyGoal: parseFloat(weeklyGoal),
-    weeks: parseFloat(weeks),
-    totalGoal,
-    progress: 0,
-    sessions: [],
-  });
+  kpis.push(new KPI(title, weeklyGoal, weeks));
   saveKPIs(kpis);
   console.log(chalk.green("Goal added successfully!"));
 }
@@ -113,12 +132,35 @@ async function logSession() {
 
   const kpiIndex = parseInt(index.split(".")[0]) - 1;
   const kpi = kpis[kpiIndex];
-
-  kpi.sessions.push(parseFloat(hours));
-  kpi.progress = kpi.sessions.reduce((total, session) => total + session, 0);
+  kpi.addSession(hours);
 
   saveKPIs(kpis);
-  console.log(chalk.green("Session logged successfully!"));
+  console.log(chalk.green(`Logged ${hours} hours for "${kpi.title}".`));
+  if (kpi.progress >= kpi.totalGoal) {
+    console.log(chalk.blue("🎉 Congratulations! You’ve achieved your goal!"));
+  }
+}
+
+async function deleteGoal() {
+  const kpis = loadKPIs();
+  if (kpis.length === 0) {
+    console.log(chalk.yellow("No goals found to delete."));
+    return;
+  }
+
+  const { index } = await inquirer.prompt([
+    {
+      name: "index",
+      message: "Select the goal to delete:",
+      type: "list",
+      choices: kpis.map((kpi, i) => `${i + 1}. ${kpi.title}`),
+    },
+  ]);
+
+  const kpiIndex = parseInt(index.split(".")[0]) - 1;
+  const deletedGoal = kpis.splice(kpiIndex, 1)[0];
+  saveKPIs(kpis);
+  console.log(chalk.red(`Deleted goal "${deletedGoal.title}".`));
 }
 
 function viewProgress() {
@@ -129,16 +171,12 @@ function viewProgress() {
   }
 
   kpis.forEach((kpi, index) => {
-    const percentage = ((kpi.progress / kpi.totalGoal) * 100).toFixed(2);
+    const percentage = kpi.getOverallProgress();
     console.log(chalk.cyan(`\n${index + 1}. ${kpi.title}`));
     console.log(`Weekly Goal: ${kpi.weeklyGoal} hours`);
     console.log(`Total Goal: ${kpi.totalGoal} hours`);
     console.log(`Progress: ${kpi.progress} hours (${percentage}%)`);
     console.log(generateProgressBar(percentage));
-    console.log(
-      "Sessions:",
-      kpi.sessions.join(", ") || "No sessions logged yet."
-    );
   });
 }
 
@@ -158,6 +196,7 @@ async function mainMenu() {
         "Add a new goal",
         "Log a study session",
         "View progress",
+        "Delete a goal",
         "Exit",
       ],
     },
@@ -173,12 +212,14 @@ async function mainMenu() {
     case "View progress":
       viewProgress();
       break;
+    case "Delete a goal":
+      await deleteGoal();
+      break;
     case "Exit":
       console.log(chalk.blue("Goodbye!"));
       process.exit();
   }
 
-  // Loop back to the main menu
   mainMenu();
 }
 
