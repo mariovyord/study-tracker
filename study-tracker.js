@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import fs from "fs";
+import os from "os";
 import inquirer from "inquirer";
 import chalk from "chalk";
 
-const dataFile = "./study-tracker.json";
-
+const dataFile = `${os.homedir()}/.study-tracker.json`;
 class KPI {
   constructor(title, weeklyGoal, weeks) {
     this.title = title;
